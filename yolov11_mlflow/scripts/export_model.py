@@ -11,10 +11,13 @@ from ultralytics import YOLO
 from datetime import datetime
 import shutil
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
+# Get the root repository path (parent of yolov11_mlflow)
+project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
+
+# Get the yolov11_mlflow path
+yolov11_root = Path(__file__).parent.parent
 
 def setup_logging():
     """Set up logging configuration."""
@@ -82,7 +85,7 @@ def clean_local_files(model_dir: Path):
 
 def get_latest_model() -> tuple[Path, str]:
     """Find the latest trained model in saved_models directory."""
-    saved_models_dir = project_root / "saved_models"
+    saved_models_dir = yolov11_root / "saved_models"
     if not saved_models_dir.exists():
         raise FileNotFoundError("saved_models directory not found")
     

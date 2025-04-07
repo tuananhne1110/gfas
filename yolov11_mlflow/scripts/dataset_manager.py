@@ -14,10 +14,13 @@ import mlflow
 from dvc.api import DVCFileSystem
 from dvc.repo import Repo
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
+# Get the root repository path (parent of yolov11_mlflow)
+project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
+
+# Get the yolov11_mlflow path
+yolov11_root = Path(__file__).parent.parent
 
 def setup_logging():
     """Set up logging configuration."""
@@ -33,7 +36,7 @@ def run_command(cmd: str, cwd: Optional[str] = None) -> bool:
             cmd,
             shell=True,
             check=True,
-            cwd=cwd,
+            cwd=cwd or str(project_root),  # Use project root as default working directory
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True
@@ -141,7 +144,7 @@ def get_dataset_info(dataset_path: str) -> Dict:
     }
     
     # Read dataset.yaml
-    yaml_path = Path(dataset_path) / "dataset.yaml"
+    yaml_path = yolov11_root / dataset_path / "dataset.yaml"
     if yaml_path.exists():
         import yaml
         with open(yaml_path) as f:
@@ -150,7 +153,7 @@ def get_dataset_info(dataset_path: str) -> Dict:
     
     # Count images
     for split in ["train", "val", "test"]:
-        img_dir = Path(dataset_path) / split / "images"
+        img_dir = yolov11_root / dataset_path / split / "images"
         if img_dir.exists():
             dataset_info[f"{split}_images"] = len(list(img_dir.glob("*.jpg")))
     
@@ -174,7 +177,8 @@ def create_new_dataset(dataset_path: str, dataset_name: str, output_version: Opt
         logging.error("Failed to set up storage")
         return False
     
-    dataset_dir = Path(dataset_path)
+    # Convert dataset_path to Path object relative to yolov11_root
+    dataset_dir = yolov11_root / dataset_path
     if not dataset_dir.exists():
         dataset_dir.mkdir(parents=True, exist_ok=True)
         logging.info(f"Created dataset directory: {dataset_dir}")
@@ -217,7 +221,7 @@ names:
     
     # Add to DVC
     logging.info("Adding dataset to DVC...")
-    if not run_command(f"dvc add {dataset_dir}"):
+    if not run_command(f"dvc add {dataset_dir.relative_to(project_root)}"):
         return False
     
     # Add all files to Git
@@ -233,6 +237,12 @@ names:
     # Push to MinIO
     logging.info("Pushing to MinIO...")
     if not run_command("dvc push"):
+        return False
+    
+    # Push to GitHub
+    logging.info("Pushing to GitHub...")
+    if not run_command("git push origin main"):
+        logging.error("Failed to push to GitHub")
         return False
     
     logging.info(f"New dataset created successfully at: {dataset_dir}")
@@ -257,10 +267,18 @@ def update_dataset(
         logging.error("Failed to set up storage")
         return False
     
-    dataset_dir = Path(dataset_path)
+    # Convert dataset_path to Path object relative to yolov11_root
+    dataset_dir = yolov11_root / dataset_path
     if not dataset_dir.exists():
         logging.error(f"Dataset directory not found: {dataset_dir}")
         return False
+    
+    # If new_data_path is provided, convert it to Path object relative to yolov11_root
+    if new_data_path:
+        new_data_dir = yolov11_root / new_data_path
+        if not new_data_dir.exists():
+            logging.error(f"New data directory not found: {new_data_path}")
+            return False
     
     # Get initial file count
     initial_counts = count_files(dataset_dir)
@@ -328,11 +346,6 @@ def update_dataset(
     
     # If new data path is provided, copy new data
     if new_data_path:
-        new_data_dir = Path(new_data_path)
-        if not new_data_dir.exists():
-            logging.error(f"New data directory not found: {new_data_path}")
-            return False
-            
         logging.info(f"\nCopying new data from: {new_data_path}")
         for split in ["train", "valid", "test"]:
             # Copy images
@@ -386,7 +399,7 @@ def update_dataset(
     
     # Add to DVC
     logging.info("\nAdding dataset to DVC...")
-    if not run_command(f"dvc add {dataset_dir}"):
+    if not run_command(f"dvc add {dataset_dir.relative_to(project_root)}"):
         logging.error("Failed to add dataset to DVC")
         return False
     
@@ -406,6 +419,12 @@ def update_dataset(
     logging.info("Pushing to MinIO...")
     if not run_command("dvc push"):
         logging.error("Failed to push to MinIO")
+        return False
+    
+    # Push to GitHub
+    logging.info("Pushing to GitHub...")
+    if not run_command("git push origin main"):
+        logging.error("Failed to push to GitHub")
         return False
     
     # Get final file count
@@ -478,7 +497,7 @@ def check_version(dataset_path: str) -> bool:
     """
     logging.info(f"Checking dataset version at: {dataset_path}")
     
-    dataset_dir = Path(dataset_path)
+    dataset_dir = yolov11_root / dataset_path
     if not dataset_dir.exists():
         logging.error(f"Dataset directory not found: {dataset_dir}")
         return False
@@ -500,15 +519,8 @@ def check_version(dataset_path: str) -> bool:
     logging.info(f"Total files: {file_counts['total']}")
     logging.info(f"Images: {file_counts['images']}")
     logging.info(f"Labels: {file_counts['labels']}")
-    
-    logging.info("\nSplit-wise Counts:")
     for split, counts in file_counts['by_split'].items():
         logging.info(f"{split}: {counts['images']} images, {counts['labels']} labels")
-    
-    # Check DVC status
-    logging.info("\nDVC Status:")
-    if not run_command("dvc status"):
-        return False
     
     return True
 
@@ -523,7 +535,7 @@ def main():
     )
     parser.add_argument(
         "--dataset-path",
-        default="./data/datasets",
+        default="data/datasets",
         help="Path to datasets directory"
     )
     parser.add_argument(

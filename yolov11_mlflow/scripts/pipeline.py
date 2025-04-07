@@ -8,14 +8,17 @@ from pathlib import Path
 import yaml
 from datetime import datetime
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
+# Get the root repository path (parent of yolov11_mlflow)
+project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
+# Get the yolov11_mlflow path
+yolov11_root = Path(__file__).parent.parent
+
 def setup_logging():
     """Set up logging configuration."""
-    log_dir = project_root / "logs"
+    log_dir = yolov11_root / "logs"
     log_dir.mkdir(exist_ok=True)
     
     log_file = log_dir / f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
@@ -32,7 +35,7 @@ def setup_logging():
 def run_command(cmd: str, cwd: str = None) -> bool:
     """Run a shell command and return success status."""
     try:
-        subprocess.run(cmd, shell=True, check=True, cwd=cwd)
+        subprocess.run(cmd, shell=True, check=True, cwd=cwd or str(project_root))
         return True
     except subprocess.CalledProcessError as e:
         logging.error(f"Command failed: {cmd}")
@@ -74,7 +77,7 @@ def train_model() -> bool:
     run_name = f"yolov11_run_{timestamp}"
     
     # Update training config with run name
-    config_path = project_root / "configs" / "training_config.yaml"
+    config_path = yolov11_root / "configs" / "training_config.yaml"
     try:
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
@@ -89,14 +92,14 @@ def train_model() -> bool:
         return False
     
     # Run training script
-    train_script = project_root / "src" / "training" / "train.py"
-    return run_command(f"python {train_script} --config configs/training_config.yaml")
+    train_script = yolov11_root / "src" / "training" / "train.py"
+    return run_command(f"python {train_script.relative_to(project_root)} --config yolov11_mlflow/configs/training_config.yaml")
 
 def export_model() -> bool:
     """Export model to engine format and upload to MinIO."""
     logging.info("Exporting and uploading model...")
-    export_script = project_root / "scripts" / "export_model.py"
-    return run_command(f"python {export_script}")
+    export_script = yolov11_root / "scripts" / "export_model.py"
+    return run_command(f"python {export_script.relative_to(project_root)}")
 
 def cleanup() -> bool:
     """Clean up temporary files and update Git."""

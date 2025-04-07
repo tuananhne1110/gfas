@@ -9,10 +9,13 @@ import subprocess
 from pathlib import Path
 import requests
 
-# Add project root to path
-project_root = Path(__file__).parent.parent
+# Get the root repository path (parent of yolov11_mlflow)
+project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
+
+# Get the yolov11_mlflow path
+yolov11_root = Path(__file__).parent.parent
 
 from dotenv import load_dotenv
 
@@ -24,7 +27,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Load environment variables
-load_dotenv(project_root / ".env")
+load_dotenv(yolov11_root / ".env")
 
 
 def check_docker():
@@ -72,7 +75,7 @@ def get_docker_compose_version():
 
 def load_env_file():
     """Load environment variables from .env file."""
-    env_file = project_root / ".env"
+    env_file = yolov11_root / ".env"
     if env_file.exists():
         logger.info("Loading environment variables from .env file")
         with open(env_file) as f:
@@ -98,7 +101,7 @@ def start_services():
     
     try:
         # Start services using docker-compose
-        compose_file = project_root / "docker-compose.yml"
+        compose_file = yolov11_root / "docker-compose.yml"
         
         if not compose_file.exists():
             logger.error(f"Docker Compose file not found: {compose_file}")
@@ -112,7 +115,7 @@ def start_services():
         
         # Create environment variables by reading from .env
         env = os.environ.copy()
-        env_file = project_root / ".env"
+        env_file = yolov11_root / ".env"
         
         if env_file.exists():
             with open(env_file, "r") as f:
@@ -213,10 +216,10 @@ def initialize_dvc():
     
     try:
         # Create directories if they don't exist
-        dvc_repo_dir = project_root / "data" / "dvc_repo"
+        dvc_repo_dir = yolov11_root / "data" / "dvc_repo"
         dvc_repo_dir.mkdir(parents=True, exist_ok=True)
         
-        datasets_dir = project_root / "data" / "datasets"
+        datasets_dir = yolov11_root / "data" / "datasets"
         datasets_dir.mkdir(parents=True, exist_ok=True)
         
         # Change to the repo directory
@@ -280,7 +283,7 @@ def stop_services():
     
     try:
         # Stop services using docker-compose
-        compose_file = project_root / "docker-compose.yml"
+        compose_file = yolov11_root / "docker-compose.yml"
         
         if not compose_file.exists():
             logger.error(f"Docker Compose file not found: {compose_file}")
@@ -288,7 +291,7 @@ def stop_services():
         
         # Create environment variables by reading from .env
         env = os.environ.copy()
-        env_file = project_root / ".env"
+        env_file = yolov11_root / ".env"
         
         if env_file.exists():
             with open(env_file, "r") as f:
