@@ -25,9 +25,10 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+          --entrypoint sh
+          -c "minio server /data --console-address ':9001'"
         volumes:
           - minio_data:/data
-        command: server /data --console-address ":9001"
     
     steps:
     - uses: actions/checkout@v3
