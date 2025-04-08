@@ -15,18 +15,18 @@ pipeline {
             }
         }
         
-        stage('Setup Python') {
+        stage('Setup Environment') {
             steps {
                 sh '''
-                    # Check Python version
-                    python3 --version || apt-get update && apt-get install -y python3 python3-venv
+                    # Check if Docker is available
+                    docker --version || echo "Docker is not available"
                     
-                    # Create and activate virtual environment
-                    python3 -m venv venv
-                    . venv/bin/activate
-                    
-                    # Install requirements
-                    pip install -r requirements.txt
+                    # Create a Python container and install dependencies
+                    docker run --rm \
+                        -v ${WORKSPACE}:/workspace \
+                        -w /workspace \
+                        python:3.10-slim \
+                        bash -c "pip install -r requirements.txt"
                 '''
             }
         }
@@ -43,9 +43,13 @@ pipeline {
         stage('Configure DVC') {
             steps {
                 sh '''
-                    . venv/bin/activate
-                    dvc remote modify --local minio access_key_id $MINIO_ACCESS_KEY
-                    dvc remote modify --local minio secret_access_key $MINIO_SECRET_KEY
+                    docker run --rm \
+                        -v ${WORKSPACE}:/workspace \
+                        -w /workspace \
+                        -e MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY} \
+                        -e MINIO_SECRET_KEY=${MINIO_SECRET_KEY} \
+                        python:3.10-slim \
+                        bash -c "pip install dvc && dvc remote modify --local minio access_key_id ${MINIO_ACCESS_KEY} && dvc remote modify --local minio secret_access_key ${MINIO_SECRET_KEY}"
                 '''
             }
         }
@@ -53,8 +57,13 @@ pipeline {
         stage('Pull Data') {
             steps {
                 sh '''
-                    . venv/bin/activate
-                    dvc pull
+                    docker run --rm \
+                        -v ${WORKSPACE}:/workspace \
+                        -w /workspace \
+                        -e MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY} \
+                        -e MINIO_SECRET_KEY=${MINIO_SECRET_KEY} \
+                        python:3.10-slim \
+                        bash -c "pip install dvc && dvc pull"
                 '''
             }
         }
@@ -62,8 +71,13 @@ pipeline {
         stage('Train Model') {
             steps {
                 sh '''
-                    . venv/bin/activate
-                    python scripts/pipeline.py
+                    docker run --rm \
+                        -v ${WORKSPACE}:/workspace \
+                        -w /workspace \
+                        -e MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY} \
+                        -e MINIO_SECRET_KEY=${MINIO_SECRET_KEY} \
+                        python:3.10-slim \
+                        bash -c "pip install -r requirements.txt && python scripts/pipeline.py"
                 '''
             }
         }
