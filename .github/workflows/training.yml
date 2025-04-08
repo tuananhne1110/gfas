@@ -1,5 +1,4 @@
 name: Training Pipeline
-
 on:
   push:
     branches: [ main ]
@@ -7,7 +6,6 @@ on:
       - 'data/**'
       - '**.dvc'
   workflow_dispatch:  # Allow manual trigger
-
 jobs:
   train:
     runs-on: ubuntu-latest
@@ -27,7 +25,7 @@ jobs:
           --health-retries 5
         volumes:
           - minio_data:/data
-        command: ["server", "/data", "--console-address", ":9001"]
+        command: ["server", "/data"]
     
     steps:
     - uses: actions/checkout@v3
@@ -70,4 +68,4 @@ jobs:
       with:
         name: pipeline-logs
         path: logs/
-        retention-days: 7 
+        retention-days: 7
