@@ -11,6 +11,6 @@ python-multipart>=0.0.6
 pillow>=9.5.0
 pandas>=2.0.0
 matplotlib==3.10.0
-requests=2.32.3
+requests==2.32.3
 dvc>=3.30.0
 dvc-s3>=2.23.0 
