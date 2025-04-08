@@ -343,6 +343,40 @@ def update_model_version(best_model_path: Path, model_name: str, results: Any) -
         raise
 
 
+def download_model(model_name: str, model_path: Path) -> bool:
+    """Download YOLOv11 model if it doesn't exist.
+    
+    Args:
+        model_name: Name of the model (e.g., 'yolov11n')
+        model_path: Path where the model should be saved
+        
+    Returns:
+        bool: True if model was downloaded successfully
+    """
+    try:
+        # Create models directory if it doesn't exist
+        model_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Check if model already exists
+        if model_path.exists():
+            logging.info(f"Model already exists at {model_path}")
+            return True
+        
+        logging.info(f"Downloading {model_name} model...")
+        
+        # Download model using ultralytics
+        model = YOLO(model_name)
+        
+        # Save the model to the specified path
+        model.save(str(model_path))
+        logging.info(f"Model downloaded and saved to {model_path}")
+        return True
+        
+    except Exception as e:
+        logging.error(f"Failed to download model: {e}")
+        return False
+
+
 def train_yolov11(config_path: str) -> None:
     """Train YOLOv11 model using Ultralytics and track with MLflow.
     
@@ -426,10 +460,18 @@ def train_yolov11(config_path: str) -> None:
         device = get_device(training_config["device"])
         
         # Update model path to use models directory
-        model_path = project_root / "models" / f"yolov11{model_name[-1]}.pt"
-        if not model_path.exists():
-            raise FileNotFoundError(f"Model file not found at {model_path}")
+        model_path = project_root / "models" / f"{model_name}.pt"
+        logging.info(f"Model path: {model_path}")
         
+        # Download model if it doesn't exist
+        if not download_model(model_name, model_path):
+            raise FileNotFoundError(f"Failed to download model {model_name}")
+        
+        # Verify model exists after download
+        if not model_path.exists():
+            raise FileNotFoundError(f"Model file not found at {model_path} after download attempt")
+        
+        logging.info(f"Loading model from {model_path}")
         model = YOLO(str(model_path))  # Load pretrained model
         
         # Prepare dataset configuration with DVC support
