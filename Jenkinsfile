@@ -1,9 +1,6 @@
 pipeline {
     agent {
-        docker {
-            image 'python:3.10-slim'
-            args '-v /var/run/docker.sock:/var/run/docker.sock'
-        }
+        label 'docker'
     }
     
     environment {
@@ -22,7 +19,10 @@ pipeline {
         
         stage('Setup Python') {
             steps {
-                sh 'pip install -r requirements.txt'
+                sh '''
+                    docker pull python:3.10-slim
+                    docker run --rm -v ${WORKSPACE}:/workspace -w /workspace python:3.10-slim pip install -r requirements.txt
+                '''
             }
         }
         
