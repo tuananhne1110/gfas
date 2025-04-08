@@ -347,7 +347,7 @@ def download_model(model_name: str, model_path: Path) -> bool:
     """Download YOLOv11 model if it doesn't exist.
     
     Args:
-        model_name: Name of the model (e.g., 'yolov11n')
+        model_name: Name of the model (e.g., 'yolo11n')
         model_path: Path where the model should be saved
         
     Returns:
@@ -364,13 +364,33 @@ def download_model(model_name: str, model_path: Path) -> bool:
         
         logging.info(f"Downloading {model_name} model...")
         
-        # Download model using ultralytics
-        model = YOLO(model_name)
-        
-        # Save the model to the specified path
-        model.save(str(model_path))
-        logging.info(f"Model downloaded and saved to {model_path}")
-        return True
+        # Try to download using ultralytics
+        try:
+            # First try with yolo prefix
+            model = YOLO(f"yolo/{model_name}")
+            model.save(str(model_path))
+            logging.info(f"Model downloaded and saved to {model_path}")
+            return True
+        except Exception as e1:
+            logging.warning(f"Failed to download with yolo/ prefix: {e1}")
+            try:
+                # Try with direct name
+                model = YOLO(model_name)
+                model.save(str(model_path))
+                logging.info(f"Model downloaded and saved to {model_path}")
+                return True
+            except Exception as e2:
+                logging.error(f"Failed to download model directly: {e2}")
+                # Try downloading from hub
+                try:
+                    from ultralytics import hub
+                    model = hub.get_model(model_name)
+                    model.save(str(model_path))
+                    logging.info(f"Model downloaded from hub and saved to {model_path}")
+                    return True
+                except Exception as e3:
+                    logging.error(f"Failed to download from hub: {e3}")
+                    raise Exception(f"All download attempts failed for model {model_name}")
         
     except Exception as e:
         logging.error(f"Failed to download model: {e}")
@@ -396,6 +416,7 @@ def train_yolov11(config_path: str) -> None:
     # Use separate buckets for data and model artifacts
     s3_endpoint = "http://localhost:9000"  # Match DVC S3 endpoint
     data_bucket = "dvc"  # Bucket for data
+    global mlflow_bucket  # Make mlflow_bucket accessible in other functions
     mlflow_bucket = "mlflow"  # Bucket for model artifacts
     
     # Try to create both buckets if they don't exist
@@ -465,6 +486,8 @@ def train_yolov11(config_path: str) -> None:
         
         # Download model if it doesn't exist
         if not download_model(model_name, model_path):
+            logging.error(f"Failed to download model {model_name}")
+            logging.error("Available YOLO models: yolo11n, yolo11s, yolo11m, yolo11l, yolo11x")
             raise FileNotFoundError(f"Failed to download model {model_name}")
         
         # Verify model exists after download
