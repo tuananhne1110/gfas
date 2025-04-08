@@ -1,10 +1,5 @@
 pipeline {
-    agent {
-        docker {
-            image 'python:3.10-slim'
-            args '-v /var/run/docker.sock:/var/run/docker.sock'
-        }
-    }
+    agent any
     
     environment {
         MINIO_ACCESS_KEY = credentials('minio-access-key')
@@ -14,23 +9,24 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                checkout([
-                    $class: 'GitSCM',
-                    branches: [[name: '*/main']],
-                    userRemoteConfigs: [[
-                        url: 'https://github.com/tuananhne1110/gfas.git',
-                        credentialsId: 'github-credentials'
-                    ]]
-                ])
+                git branch: 'main',
+                    url: 'https://github.com/tuananhne1110/gfas.git',
+                    credentialsId: 'github-credentials'
             }
         }
         
-        stage('Setup Environment') {
+        stage('Setup Python') {
             steps {
-                sh '''
-                    python -m pip install --upgrade pip
-                    pip install -r requirements.txt
-                '''
+                script {
+                    def pythonImage = docker.image('python:3.10-slim')
+                    pythonImage.pull()
+                    pythonImage.inside('-v /var/run/docker.sock:/var/run/docker.sock') {
+                        sh '''
+                            python -m pip install --upgrade pip
+                            pip install -r requirements.txt
+                        '''
+                    }
+                }
             }
         }
         
@@ -60,7 +56,12 @@ pipeline {
         
         stage('Train Model') {
             steps {
-                sh 'python scripts/pipeline.py'
+                script {
+                    def pythonImage = docker.image('python:3.10-slim')
+                    pythonImage.inside('-v /var/run/docker.sock:/var/run/docker.sock') {
+                        sh 'python scripts/pipeline.py'
+                    }
+                }
             }
         }
     }
