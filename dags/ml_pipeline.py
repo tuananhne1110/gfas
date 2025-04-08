@@ -4,6 +4,10 @@ from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
 from airflow.models import Variable
 import os
+import time
+import requests
+import logging
+import subprocess
 
 # Define default arguments
 default_args = {
@@ -23,6 +27,88 @@ dag = DAG(
     schedule_interval=None,
     catchup=False
 )
+
+def wait_for_mlflow():
+    """Wait for MLflow server to be ready."""
+    # Use Docker network to access MLflow
+    mlflow_uri = "http://localhost:5000"  # Use localhost since we're port-forwarding
+    max_retries = 30
+    retry_interval = 5
+
+    logging.info("Waiting for MLflow server to be ready...")
+    
+    # First check if the containers are running
+    try:
+        # Check MLflow container
+        result = subprocess.run(
+            ["docker", "ps", "--filter", "name=mlflow-server", "--format", "{{.Status}}"],
+            capture_output=True,
+            text=True
+        )
+        if "Up" not in result.stdout:
+            logging.error("MLflow container is not running!")
+            logging.error("Docker ps output: %s", result.stdout)
+            # Check MLflow logs
+            logs = subprocess.run(
+                ["docker", "logs", "mlflow-server"],
+                capture_output=True,
+                text=True
+            )
+            logging.error("MLflow container logs: %s", logs.stdout)
+            raise Exception("MLflow container is not running")
+
+        # Check MinIO container
+        result = subprocess.run(
+            ["docker", "ps", "--filter", "name=mlflow-minio", "--format", "{{.Status}}"],
+            capture_output=True,
+            text=True
+        )
+        if "Up" not in result.stdout:
+            logging.error("MinIO container is not running!")
+            logging.error("Docker ps output: %s", result.stdout)
+            # Check MinIO logs
+            logs = subprocess.run(
+                ["docker", "logs", "mlflow-minio"],
+                capture_output=True,
+                text=True
+            )
+            logging.error("MinIO container logs: %s", logs.stdout)
+            raise Exception("MinIO container is not running")
+
+        # Check Postgres container
+        result = subprocess.run(
+            ["docker", "ps", "--filter", "name=mlflow-postgres", "--format", "{{.Status}}"],
+            capture_output=True,
+            text=True
+        )
+        if "Up" not in result.stdout:
+            logging.error("Postgres container is not running!")
+            logging.error("Docker ps output: %s", result.stdout)
+            # Check Postgres logs
+            logs = subprocess.run(
+                ["docker", "logs", "mlflow-postgres"],
+                capture_output=True,
+                text=True
+            )
+            logging.error("Postgres container logs: %s", logs.stdout)
+            raise Exception("Postgres container is not running")
+
+        # Wait for MLflow server to be ready
+        for i in range(max_retries):
+            try:
+                response = requests.get(mlflow_uri)
+                if response.status_code == 200:
+                    logging.info("MLflow server is ready!")
+                    return
+            except requests.exceptions.ConnectionError:
+                logging.info(f"MLflow server not ready yet, retrying in {retry_interval} seconds... (attempt {i+1}/{max_retries})")
+                time.sleep(retry_interval)
+        
+        raise Exception(f"MLflow server did not become ready after {max_retries} attempts")
+        
+    except Exception as e:
+        logging.error(f"Error waiting for MLflow: {e}")
+        raise
 
 # Define tasks
 checkout = BashOperator(
@@ -80,36 +166,44 @@ configure_dvc = BashOperator(
         if [ ! -d .dvc ]; then
             dvc init --no-scm
         fi
-        # Configure DVC remote if not already configured
-        if [ ! -f .dvc/.credentials_configured ] || [ ! -f .dvc/config.local ]; then
-            dvc remote modify --local minio access_key_id {{ var.value.MINIO_ACCESS_KEY }} && \
-            dvc remote modify --local minio secret_access_key {{ var.value.MINIO_SECRET_KEY }} && \
-            touch .dvc/.credentials_configured
+        # Add minio remote if not exists
+        if ! dvc remote list | grep -q minio; then
+            dvc remote add -d minio s3://dvc
         fi
+        # Configure MinIO endpoint and credentials
+        dvc remote modify minio endpointurl http://localhost:9000
+        dvc remote modify minio access_key_id minioadmin
+        dvc remote modify minio secret_access_key minioadmin
     ''',
     dag=dag
 )
 
-pull_data = BashOperator(
-    task_id='pull_data',
-    bash_command='''
-        cd /opt/airflow/workspace/gfas && \
-        . venv/bin/activate && \
-        # Check if data has changed on remote
-        dvc status || dvc pull
-    ''',
+start_mlflow = BashOperator(
+    task_id='start_mlflow',
+    bash_command='cd /opt/airflow/workspace/gfas && python yolov11_mlflow/scripts/start_services.py',
+    dag=dag
+)
+
+wait_for_mlflow = PythonOperator(
+    task_id='wait_for_mlflow',
+    python_callable=wait_for_mlflow,
     dag=dag
 )
 
 train_model = BashOperator(
     task_id='train_model',
     bash_command='''
-        cd /opt/airflow/workspace/gfas && \
-        . venv/bin/activate && \
-        python scripts/pipeline.py
+        cd /opt/airflow/workspace/gfas && 
+        . venv/bin/activate && 
+        # Set environment variables for MLflow and MinIO
+        export MLFLOW_TRACKING_URI=http://localhost:5000 && 
+        export MLFLOW_S3_ENDPOINT_URL=http://localhost:9000 && 
+        export AWS_ACCESS_KEY_ID=minioadmin && 
+        export AWS_SECRET_ACCESS_KEY=minioadmin && 
+        python yolov11_mlflow/scripts/pipeline.py
     ''',
     dag=dag
 )
 
-# Define task dependencies
-checkout >> setup_env >> configure_git >> configure_dvc >> pull_data >> train_model 
+# Set task dependencies
+checkout >> start_mlflow >> wait_for_mlflow >> train_model 
