@@ -18,8 +18,14 @@ pipeline {
         stage('Setup Python') {
             steps {
                 sh '''
-                    python -m venv venv
+                    # Check Python version
+                    python3 --version || apt-get update && apt-get install -y python3 python3-venv
+                    
+                    # Create and activate virtual environment
+                    python3 -m venv venv
                     . venv/bin/activate
+                    
+                    # Install requirements
                     pip install -r requirements.txt
                 '''
             }
