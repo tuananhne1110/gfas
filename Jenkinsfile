@@ -17,16 +17,10 @@ pipeline {
         
         stage('Setup Python') {
             steps {
-                script {
-                    def pythonImage = docker.image('python:3.10-slim')
-                    pythonImage.pull()
-                    pythonImage.inside('-v /var/run/docker.sock:/var/run/docker.sock') {
-                        sh '''
-                            python -m pip install --upgrade pip
-                            pip install -r requirements.txt
-                        '''
-                    }
-                }
+                sh '''
+                    docker pull python:3.10-slim
+                    docker run --rm -v ${WORKSPACE}:/workspace -w /workspace python:3.10-slim pip install -r requirements.txt
+                '''
             }
         }
         
@@ -56,12 +50,15 @@ pipeline {
         
         stage('Train Model') {
             steps {
-                script {
-                    def pythonImage = docker.image('python:3.10-slim')
-                    pythonImage.inside('-v /var/run/docker.sock:/var/run/docker.sock') {
-                        sh 'python scripts/pipeline.py'
-                    }
-                }
+                sh '''
+                    docker run --rm \
+                        -v ${WORKSPACE}:/workspace \
+                        -w /workspace \
+                        -e MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY} \
+                        -e MINIO_SECRET_KEY=${MINIO_SECRET_KEY} \
+                        python:3.10-slim \
+                        python scripts/pipeline.py
+                '''
             }
         }
     }
