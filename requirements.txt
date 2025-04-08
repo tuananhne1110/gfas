@@ -4,13 +4,13 @@ uvicorn==0.34.0
 python-dotenv==1.0.1
 boto3>=1.28.0
 psycopg2-binary>=2.9.6
-pydantic=2.10.6
+pydantic==2.10.6
 pytest>=7.3.1
 pre-commit>=3.3.2
 python-multipart>=0.0.6
 pillow>=9.5.0
 pandas>=2.0.0
-matplotlib=3.10.0
+matplotlib==3.10.0
 requests=2.32.3
 dvc>=3.30.0
 dvc-s3>=2.23.0 
