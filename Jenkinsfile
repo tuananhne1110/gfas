@@ -1,7 +1,5 @@
 pipeline {
-    agent {
-        label 'docker'
-    }
+    agent any
     
     environment {
         MINIO_ACCESS_KEY = credentials('minio-access-key')
@@ -20,8 +18,9 @@ pipeline {
         stage('Setup Python') {
             steps {
                 sh '''
-                    docker pull python:3.10-slim
-                    docker run --rm -v ${WORKSPACE}:/workspace -w /workspace python:3.10-slim pip install -r requirements.txt
+                    python -m venv venv
+                    . venv/bin/activate
+                    pip install -r requirements.txt
                 '''
             }
         }
@@ -38,6 +37,7 @@ pipeline {
         stage('Configure DVC') {
             steps {
                 sh '''
+                    . venv/bin/activate
                     dvc remote modify --local minio access_key_id $MINIO_ACCESS_KEY
                     dvc remote modify --local minio secret_access_key $MINIO_SECRET_KEY
                 '''
@@ -46,20 +46,18 @@ pipeline {
         
         stage('Pull Data') {
             steps {
-                sh 'dvc pull'
+                sh '''
+                    . venv/bin/activate
+                    dvc pull
+                '''
             }
         }
         
         stage('Train Model') {
             steps {
                 sh '''
-                    docker run --rm \
-                        -v ${WORKSPACE}:/workspace \
-                        -w /workspace \
-                        -e MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY} \
-                        -e MINIO_SECRET_KEY=${MINIO_SECRET_KEY} \
-                        python:3.10-slim \
-                        python scripts/pipeline.py
+                    . venv/bin/activate
+                    python scripts/pipeline.py
                 '''
             }
         }
