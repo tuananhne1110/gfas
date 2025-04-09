@@ -27,7 +27,19 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Load environment variables
-load_dotenv(yolov11_root / ".env")
+env_path = yolov11_root / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
+    logger.info(f"Loaded environment variables from {env_path}")
+else:
+    logger.warning(f".env file not found at {env_path}")
+    # Try to load from project root
+    env_path = project_root / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
+        logger.info(f"Loaded environment variables from {env_path}")
+    else:
+        logger.warning(f".env file not found at {env_path}")
 
 
 def check_docker():
