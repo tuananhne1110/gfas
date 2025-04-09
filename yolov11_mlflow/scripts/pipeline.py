@@ -4,6 +4,8 @@ import os
 import sys
 import logging
 import subprocess
+import time
+import requests
 from pathlib import Path
 import yaml
 from datetime import datetime
@@ -35,12 +37,37 @@ def setup_logging():
 def run_command(cmd: str, cwd: str = None) -> bool:
     """Run a shell command and return success status."""
     try:
-        subprocess.run(cmd, shell=True, check=True, cwd=cwd or str(project_root))
+        result = subprocess.run(cmd, shell=True, check=True, cwd=cwd or str(project_root), 
+                              capture_output=True, text=True)
+        logging.info(f"Command output: {result.stdout}")
         return True
     except subprocess.CalledProcessError as e:
         logging.error(f"Command failed: {cmd}")
         logging.error(f"Error: {e}")
+        logging.error(f"Stderr: {e.stderr}")
         return False
+
+def check_services() -> bool:
+    """Check if MLflow and MinIO services are running."""
+    logging.info("Checking MLflow and MinIO services...")
+    
+    def check_service(url: str, name: str) -> bool:
+        try:
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                logging.info(f"{name} service is running")
+                return True
+            else:
+                logging.error(f"{name} service returned status code {response.status_code}")
+                return False
+        except Exception as e:
+            logging.error(f"Error checking {name} service: {e}")
+            return False
+    
+    mlflow_ready = check_service("http://localhost:5000", "MLflow")
+    minio_ready = check_service("http://localhost:9000", "MinIO")
+    
+    return mlflow_ready and minio_ready
 
 def check_dvc_changes() -> bool:
     """Check if there are any changes in DVC tracked files."""
@@ -74,7 +101,7 @@ def train_model() -> bool:
     
     # Get current timestamp for run name
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_name = f"yolov11_run_{timestamp}"
+    run_name = f"yolo11_run_{timestamp}"
     
     # Update training config with run name
     config_path = yolov11_root / "configs" / "training_config.yaml"
@@ -125,6 +152,11 @@ def run_pipeline():
     logging.info("Starting pipeline...")
     
     try:
+        # Check if services are running
+        if not check_services():
+            logging.error("Required services (MLflow, MinIO) are not running")
+            return False
+        
         # Check for DVC changes
         if not check_dvc_changes():
             logging.info("No changes detected. Pipeline completed.")
