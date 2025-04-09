@@ -95,7 +95,13 @@ start_mlflow = BashOperator(
     task_id='start_mlflow',
     bash_command='''
         cd /opt/airflow/workspace/gfas && \
-        . venv/bin/activate && \
+        # Copy .env file if it doesn't exist
+        if [ ! -f .env ]; then
+            cp yolov11_mlflow/.env .env
+        fi
+        # Copy .env file to yolov11_mlflow directory
+        cp .env yolov11_mlflow/.env
+        # Start services
         python yolov11_mlflow/scripts/start_services.py
     ''',
     dag=dag
