@@ -54,7 +54,8 @@ def check_services() -> bool:
     def check_service(url: str, name: str) -> bool:
         try:
             response = requests.get(url, timeout=5)
-            if response.status_code == 200:
+            # For MinIO, 403 means the service is running but requires authentication
+            if response.status_code in [200, 403]:
                 logging.info(f"{name} service is running")
                 return True
             else:
@@ -67,7 +68,11 @@ def check_services() -> bool:
     mlflow_ready = check_service("http://localhost:5000", "MLflow")
     minio_ready = check_service("http://localhost:9000", "MinIO")
     
-    return mlflow_ready and minio_ready
+    if not mlflow_ready or not minio_ready:
+        logging.error("Required services (MLflow, MinIO) are not running")
+        return False
+    
+    return True
 
 def check_dvc_changes() -> bool:
     """Check if there are any changes in DVC tracked files."""

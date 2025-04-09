@@ -121,6 +121,54 @@ def check_services_running():
     return running_services
 
 
+def check_minio_buckets():
+    """Check and create MinIO buckets if they don't exist."""
+    logger.info("Checking MinIO buckets...")
+    
+    # Get MinIO credentials
+    access_key = os.getenv("AWS_ACCESS_KEY_ID", "minioadmin")
+    secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", "minioadmin")
+    endpoint = os.getenv("MLFLOW_S3_ENDPOINT_URL", "http://localhost:9000")
+    
+    # Buckets to check/create
+    buckets = ["mlflow", "dvc"]
+    
+    for bucket in buckets:
+        try:
+            # Check if bucket exists
+            result = subprocess.run(
+                ["mc", "ls", f"myminio/{bucket}"],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            logger.info(f"Bucket {bucket} exists")
+        except subprocess.CalledProcessError:
+            # Create bucket if it doesn't exist
+            logger.info(f"Creating bucket {bucket}...")
+            try:
+                subprocess.run(
+                    ["mc", "mb", f"myminio/{bucket}"],
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                # Set bucket policy to public
+                subprocess.run(
+                    ["mc", "policy", "set", "download", f"myminio/{bucket}"],
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                logger.info(f"Bucket {bucket} created and policy set")
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to create bucket {bucket}: {e}")
+                logger.error(f"STDERR: {e.stderr.decode()}")
+                return False
+    
+    return True
+
+
 def start_services():
     """Start MLflow and related services using Docker Compose."""
     if not check_docker():
@@ -137,6 +185,8 @@ def start_services():
     # If all services are running, we're good
     if all(service in running_services for service in required_services):
         logger.info("All required services are already running")
+        # Check buckets anyway
+        check_minio_buckets()
         return
     
     # If some services are running but not all, stop them first
@@ -191,6 +241,9 @@ def start_services():
         
         # Wait for services to be ready
         wait_for_services()
+        
+        # Check and create MinIO buckets
+        check_minio_buckets()
         
         # Initialize DVC repository
         initialize_dvc()
