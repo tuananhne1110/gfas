@@ -88,6 +88,27 @@ def load_env_file():
         logger.warning(".env file not found")
 
 
+def check_services_running():
+    """Check if MLflow services are already running."""
+    services = ["mlflow-server", "mlflow-minio", "mlflow-postgres"]
+    running_services = []
+    
+    for service in services:
+        try:
+            result = subprocess.run(
+                ["docker", "ps", "--filter", f"name={service}", "--format", "{{.Status}}"],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            if "Up" in result.stdout.decode().strip():
+                running_services.append(service)
+        except subprocess.CalledProcessError:
+            continue
+    
+    return running_services
+
+
 def start_services():
     """Start MLflow and related services using Docker Compose."""
     if not check_docker():
@@ -96,6 +117,21 @@ def start_services():
     
     # Load environment variables first
     load_env_file()
+    
+    # Check if services are already running
+    running_services = check_services_running()
+    required_services = ["mlflow-server", "mlflow-minio", "mlflow-postgres"]
+    
+    # If all services are running, we're good
+    if all(service in running_services for service in required_services):
+        logger.info("All required services are already running")
+        return
+    
+    # If some services are running but not all, stop them first
+    if running_services:
+        logger.warning(f"Some services are running but not all: {', '.join(running_services)}")
+        logger.info("Stopping existing services to ensure clean state...")
+        stop_services()
     
     logger.info("Starting MLflow and related services...")
     
@@ -174,26 +210,50 @@ def wait_for_services():
     
     while not service_ready and retries < max_retries:
         try:
-            # Just check if the root endpoint is available - simplest check
+            # Check if containers are running
+            containers_running = check_services_running()
+            if len(containers_running) < 3:
+                logger.warning(f"Not all containers are running. Running: {containers_running}")
+                time.sleep(5)
+                retries += 1
+                continue
+            
+            # Check MLflow UI
             ui_response = requests.get(mlflow_uri)
             if ui_response.status_code == 200:
                 logger.info("MLflow UI is accessible")
-                service_ready = True
+                
+                # Check MinIO
+                try:
+                    minio_response = requests.get(minio_uri)
+                    if minio_response.status_code in [200, 403]:  # 403 means auth required, which is fine
+                        logger.info("MinIO is accessible")
+                        service_ready = True
+                    else:
+                        logger.warning(f"MinIO returned status code: {minio_response.status_code}")
+                except requests.exceptions.ConnectionError:
+                    logger.warning("MinIO not ready yet")
+                
             else:
                 logger.info(f"MLflow not ready yet (status code: {ui_response.status_code}), retrying...")
+            
+            if not service_ready:
                 time.sleep(5)
                 retries += 1
+                
         except requests.exceptions.ConnectionError:
             logger.info("MLflow not ready yet, retrying...")
             time.sleep(5)
             retries += 1
     
     if not service_ready:
-        logger.warning("MLflow service did not become ready in the expected time, but may still be initializing")
-        logger.warning("Check if you can access MLflow UI at: http://localhost:5000")
-        logger.warning("You can check its status with: docker logs -f mlflow-server")
+        logger.error("Services did not become ready in the expected time")
+        logger.error("Check container logs with: docker logs -f mlflow-server")
+        logger.error("Check container logs with: docker logs -f mlflow-minio")
+        logger.error("Check container logs with: docker logs -f mlflow-postgres")
+        sys.exit(1)
     else:
-        logger.info("MLflow service is ready and accessible")
+        logger.info("All services are ready and accessible")
 
 
 def initialize_dvc():
